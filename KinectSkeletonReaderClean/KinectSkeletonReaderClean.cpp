@@ -44,7 +44,6 @@ float calcularAngulo(const CameraSpacePoint& a, const CameraSpacePoint& b, const
     return acosf(cosTheta) * (180.0f / 3.14159f);
 }
 
-// Calcula ângulo entre dois vetores no plano 2D
 float calcularAngulo2D(float x1, float y1, float x2, float y2) {
     float dot = x1 * x2 + y1 * y2;
     float mag1 = std::sqrt(x1 * x1 + y1 * y1);
@@ -56,37 +55,7 @@ float calcularAngulo2D(float x1, float y1, float x2, float y2) {
     return acosf(cosTheta) * (180.0f / 3.14159f);
 }
 
-// Calcula rotação do antebraço (pronação/supinação)
-float calcularRotacaoAntebraco(const CameraSpacePoint& ombro, const CameraSpacePoint& cotovelo, const CameraSpacePoint& pulso, const CameraSpacePoint& mao) {
-    float ax = cotovelo.X - ombro.X;
-    float ay = cotovelo.Y - ombro.Y;
-    float az = cotovelo.Z - ombro.Z;
-    float bx = pulso.X - cotovelo.X;
-    float by = pulso.Y - cotovelo.Y;
-    float bz = pulso.Z - cotovelo.Z;
-    float cx = mao.X - pulso.X;
-    float cy = mao.Y - pulso.Y;
-    float cz = mao.Z - pulso.Z;
-
-    float nx = ay * bz - az * by;
-    float ny = az * bx - ax * bz;
-    float nz = ax * by - ay * bx;
-
-    float mx = by * cz - bz * cy;
-    float my = bz * cx - bx * cz;
-    float mz = bx * cy - by * cx;
-
-    float dot = nx * mx + ny * my + nz * mz;
-    float magN = std::sqrt(nx * nx + ny * ny + nz * nz);
-    float magM = std::sqrt(mx * mx + my * my + mz * mz);
-    if (magN == 0.0f || magM == 0.0f) return 0.0f;
-    float cosTheta = dot / (magN * magM);
-    if (cosTheta < -1.0f) cosTheta = -1.0f;
-    if (cosTheta > 1.0f) cosTheta = 1.0f;
-    return acosf(cosTheta) * (180.0f / 3.14159f);
-}
-
-// === Principal ===
+// LOOP PRINCIPAL
 int main() {
     IKinectSensor* sensor = nullptr;
     if (FAILED(GetDefaultKinectSensor(&sensor)) || !sensor) {
@@ -112,7 +81,7 @@ int main() {
         return 1;
     }
 
-    HANDLE serial = abrirPortaSerial(L"\\\\.\\COM9");
+    HANDLE serial = abrirPortaSerial(L"\\\\.\\COMX");
     if (serial == INVALID_HANDLE_VALUE) {
         std::cerr << "[ERRO] Não foi possível abrir a porta serial.\n";
         bodyReader->Release();
@@ -121,7 +90,7 @@ int main() {
         return 1;
     }
 
-    const int intervaloMs = 33; // Aproximadamente 30 fps
+    const int intervaloMs = 33; // 30 FPS +-
 
     while (true) {
         auto inicio = std::chrono::high_resolution_clock::now();
@@ -137,9 +106,7 @@ int main() {
                         if (SUCCEEDED(corpos[i]->GetJoints(JointType_Count, j))) {
                             auto ombro = j[JointType_ShoulderRight].Position;
                             auto cotovelo = j[JointType_ElbowRight].Position;
-                            auto pulso = j[JointType_WristRight].Position;
                             auto baseColuna = j[JointType_SpineBase].Position;
-                            auto mao = j[JointType_HandRight].Position;
 
                             // 1. Rotação da base (horizontal, plano XZ)
                             float baseXZ1x = ombro.X - baseColuna.X;
@@ -148,35 +115,17 @@ int main() {
                             float baseXZ2z = cotovelo.Z - ombro.Z;
                             float angBase = calcularAngulo2D(baseXZ1x, baseXZ1z, baseXZ2x, baseXZ2z);
 
-                            // 2. Ombro vertical (plano YZ)
                             float ombroYZ1y = ombro.Y - baseColuna.Y;
                             float ombroYZ1z = ombro.Z - baseColuna.Z;
                             float ombroYZ2y = cotovelo.Y - ombro.Y;
                             float ombroYZ2z = cotovelo.Z - ombro.Z;
                             float angOmbro = calcularAngulo2D(ombroYZ1y, ombroYZ1z, ombroYZ2y, ombroYZ2z);
-
-                            // 3. Rotação do bíceps (pronação/supinação)
-                            float angBiceps = calcularRotacaoAntebraco(ombro, cotovelo, pulso, mao);
-
-                            // 4. Cotovelo (dobrar/esticar)
-                            float angCotovelo = calcularAngulo(ombro, cotovelo, pulso);
-
-                            // 5. Pulso (girar)
-                            float angPulso = calcularAngulo(cotovelo, pulso, mao);
-
-                            // Limites e ajustes conforme braço robótico
+                            
                             angBase = std::max(0.0f, std::min(angBase, 180.0f));
                             angOmbro = std::max(0.0f, std::min(angOmbro, 180.0f));
-                            angBiceps = std::max(0.0f, std::min(angBiceps, 180.0f));
-                            angCotovelo = std::max(0.0f, std::min(angCotovelo, 180.0f));
-                            angPulso = std::max(0.0f, std::min(angPulso, 180.0f));
 
-                            // Envie para os servos conforme a ordem do braço
-                            enviarParaSerial(serial, "articulacao10:" + std::to_string((int)angBase) + "\n");
-                            enviarParaSerial(serial, "articulacao9:" + std::to_string((int)angCotovelo) + "\n");
-                            enviarParaSerial(serial, "articulacao6:" + std::to_string((int)angBiceps) + "\n");
-                            enviarParaSerial(serial, "articulacao11:" + std::to_string((int)angOmbro) + "\n");
-                            enviarParaSerial(serial, "articulacao8:" + std::to_string((int)angPulso) + "\n");
+                            enviarParaSerial(serial, "articulacao9:" + std::to_string((int)angBase) + "\n");
+                            enviarParaSerial(serial, "articulacao10:" + std::to_string((int)angOmbro) + "\n");
                         }
                     }
                     if (corpos[i]) corpos[i]->Release();
